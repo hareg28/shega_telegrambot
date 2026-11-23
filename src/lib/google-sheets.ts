@@ -11,20 +11,30 @@ import { decimalToNumber, formatDate, getRequesterDisplayName } from "./calculat
 
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
-// ✅ UPDATED: Uses GOOGLE_APPLICATION_CREDENTIALS from .env
+// ✅ Supports either key file path or raw JSON string for serverless (Vercel)
 async function getSheetsClient() {
   const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  const credentialsJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
-  if (!credentialsPath) {
-    console.warn("Google Sheets credentials path is not configured in .env (GOOGLE_APPLICATION_CREDENTIALS)");
+  if (!credentialsPath && !credentialsJson) {
+    console.warn("Google Sheets credentials not configured in .env (GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_SERVICE_ACCOUNT_JSON)");
     return null;
   }
 
   try {
-    const auth = new google.auth.GoogleAuth({
-      keyFile: credentialsPath,
-      scopes: SCOPES,
-    });
+    let auth;
+    if (credentialsJson) {
+      const credentials = typeof credentialsJson === "string" ? JSON.parse(credentialsJson) : credentialsJson;
+      auth = new google.auth.GoogleAuth({
+        credentials,
+        scopes: SCOPES,
+      });
+    } else {
+      auth = new google.auth.GoogleAuth({
+        keyFile: credentialsPath,
+        scopes: SCOPES,
+      });
+    }
     return google.sheets({ version: "v4", auth });
   } catch (err) {
     console.error("Failed to initialize Google Sheets client", err);
