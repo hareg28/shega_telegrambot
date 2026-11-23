@@ -100,7 +100,8 @@ export function formatMrDraftReview(data: DraftData): string {
 // ──────────────────────────────────────────────────────────────────────────────
 
 export function formatPurchaseDraftReview(data: DraftData): string {
-  const items = (data.items ?? []) as PurchaseDraftItem[];
+  const allItems = (data.items ?? []) as PurchaseDraftItem[];
+  const items = allItems.filter((i) => safeNumber(i.unitPrice) > 0 && safeNumber(i.quantity) > 0);
   const company = getCompanyName();
   const boqName = data.boq?.trim() || "Material List";
 
@@ -134,6 +135,11 @@ export function formatPurchaseDraftReview(data: DraftData): string {
     text += `${i + 1}. <b>${esc(item.itemName)}</b> — ${qty} ${esc(item.unit ?? "pcs")}\n`;
     text += `   💰 Price: ${qty} × ${formatMoney(price)} = ETB <b>${formatMoney(baseAmt)}</b>\n`;
   });
+
+  if (allItems.length > items.length) {
+    const excludedCount = allItems.length - items.length;
+    text += `\n<i>ℹ️ ${items.length} of ${allItems.length} materials included for this supplier (${excludedCount} excluded/unpriced can be purchased from other suppliers).</i>\n`;
+  }
 
   text += `\n💰 <b>Cost Summary</b>\n\n`;
   text += `👉 Total Before VAT: <b>ETB ${formatMoney(subtotal)}</b>\n`;

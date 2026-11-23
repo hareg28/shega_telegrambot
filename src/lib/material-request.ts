@@ -96,7 +96,7 @@ export async function approveMaterialRequest(
   remarks?: string
 ) {
   const mr = await prisma.materialRequest.findUnique({ where: { id: mrId } });
-  if (!mr || mr.status !== "PENDING_APPROVAL") {
+  if (!mr || (mr.status !== "PENDING_APPROVAL" && mr.status !== "REJECTED")) {
     throw new Error("INVALID_STATUS");
   }
 
@@ -123,6 +123,36 @@ export async function approveMaterialRequest(
 
   await logActivity("MR_APPROVED", "MaterialRequest", mrId, adminId);
 
+  return updated;
+}
+
+export async function reopenMaterialRequest(
+  mrId: string,
+  adminId: string
+) {
+  const mr = await prisma.materialRequest.findUnique({ where: { id: mrId } });
+  if (!mr) {
+    throw new Error("NOT_FOUND");
+  }
+
+  const updated = await prisma.materialRequest.update({
+    where: { id: mrId },
+    data: { status: "PENDING_APPROVAL" },
+    include: { items: true, requestedBy: true },
+  });
+
+  await prisma.approvalHistory.create({
+    data: {
+      materialRequestId: mrId,
+      action: "MR_SUBMITTED",
+      performedById: adminId,
+    },
+  });
+
+  const { upsertMaterialRequestRows } = await import("@/lib/google-sheets");
+  upsertMaterialRequestRows(updated).catch(console.error);
+
+  await logActivity("MR_REOPENED", "MaterialRequest", mrId, adminId);
   return updated;
 }
 
@@ -405,7 +435,7 @@ export async function getApprovedMaterialRequests(limit = 20, options?: { status
   if (options?.status) {
     where.status = Array.isArray(options.status) ? { in: options.status } : options.status;
   } else {
-    where.status = "APPROVED_FOR_PURCHASING";
+    where.status = { in: ["APPROVED_FOR_PURCHASING", "WAITING_FINAL_APPROVAL"] };
   }
   
   if (options?.dateFrom) {

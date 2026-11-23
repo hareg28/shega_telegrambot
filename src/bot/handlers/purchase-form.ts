@@ -42,6 +42,7 @@ import {
   approvedRequestsFilterKeyboard,
   mainMenuKeyboard,
   editQtyKeyboard,
+  excludeItemKeyboard,
   setPriceKeyboard,
   purchaserMrKeyboard,
   vatYesNoKeyboard,
@@ -416,6 +417,17 @@ async function handlePurchaseItemsMenuAction(
       await ctx.reply("Select item to edit quantity:", {
         reply_markup: editQtyKeyboard(items.length),
       });
+      return true;
+
+    case "🗑 Exclude Material":
+      if (items.length === 0) { await ctx.reply("No items."); return true; }
+      await ctx.reply(
+        "Select a material to toggle <b>Exclude / Include</b> for this supplier:\n<i>(Excluded materials can be purchased from other suppliers)</i>",
+        {
+          parse_mode: "HTML",
+          reply_markup: excludeItemKeyboard(items.length, items),
+        }
+      );
       return true;
 
     case "💰 Set Prices":
@@ -1282,6 +1294,44 @@ export async function handleDeletePrDraft(ctx: Context, prId: string) {
 // ──────────────────────────────────────────────────────────────────────────────
 // Inline callback wiring (qty/price select buttons)
 // ──────────────────────────────────────────────────────────────────────────────
+
+export async function handleExcludeItemCallback(ctx: Context, rawArg: string) {
+  const from = ctx.from;
+  if (!from) return;
+
+  if (rawArg === "done") {
+    await ctx.answerCallbackQuery();
+    const draft = await getDraft(BigInt(from.id));
+    if (draft) {
+      await showPurchaseItemsMenu(ctx, getDraftData(draft));
+    }
+    return;
+  }
+
+  const idx = parseInt(rawArg, 10);
+  const draft = await getDraft(BigInt(from.id));
+  if (!draft) return;
+  const data = getDraftData(draft);
+  const items = [...((data.items ?? []) as PurchaseDraftItem[])];
+  if (!items[idx]) {
+    await ctx.answerCallbackQuery({ text: "Item not found" });
+    return;
+  }
+
+  if (items[idx].unitPrice > 0) {
+    items[idx].unitPrice = 0;
+    items[idx].amount = 0;
+    items[idx].vatAmount = 0;
+    await updateDraftData(BigInt(from.id), { items });
+    await ctx.answerCallbackQuery({ text: `❌ Excluded: ${items[idx].itemName}` });
+  } else {
+    await ctx.answerCallbackQuery({ text: "Use '💰 Set Prices' to set price and include" });
+  }
+
+  await ctx.editMessageReplyMarkup({
+    reply_markup: excludeItemKeyboard(items.length, items),
+  }).catch(() => {});
+}
 
 export async function handleEditQtyCallback(ctx: Context, index: number) {
   const from = ctx.from;

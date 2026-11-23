@@ -299,7 +299,7 @@ export async function approvePurchaseRequest(
     },
   });
 
-  if (!pr || pr.status !== "PENDING_APPROVAL") {
+  if (!pr || (pr.status !== "PENDING_APPROVAL" && pr.status !== "REJECTED")) {
     throw new Error("INVALID_STATUS");
   }
 
@@ -381,7 +381,7 @@ export async function rejectPurchaseRequest(
     include: { materialRequest: true, items: true, purchaser: true, approvedBy: true },
   });
 
-  if (!pr || pr.status !== "PENDING_APPROVAL") {
+  if (!pr || (pr.status !== "PENDING_APPROVAL" && pr.status !== "REJECTED")) {
     throw new Error("INVALID_STATUS");
   }
 
@@ -437,6 +437,50 @@ export async function rejectPurchaseRequest(
   }
 
   return pr;
+}
+
+export async function reopenPurchaseRequest(
+  prId: string,
+  adminId: string
+) {
+  const pr = await prisma.purchaseRequest.findUnique({
+    where: { id: prId },
+    include: { materialRequest: true },
+  });
+  if (!pr) throw new Error("NOT_FOUND");
+
+  await prisma.$transaction(async (tx) => {
+    await tx.purchaseRequest.update({
+      where: { id: prId },
+      data: {
+        status: "PENDING_APPROVAL",
+        rejectionReason: null,
+      },
+    });
+
+    await tx.materialRequest.update({
+      where: { id: pr.materialRequestId },
+      data: { status: "WAITING_FINAL_APPROVAL" },
+    });
+
+    await tx.approvalHistory.create({
+      data: {
+        materialRequestId: pr.materialRequestId,
+        purchaseRequestId: prId,
+        action: "PURCHASE_SUBMITTED",
+        performedById: adminId,
+      },
+    });
+  }, { timeout: 20000 });
+
+  const updated = await getPurchaseRequestById(prId);
+  if (updated) {
+    const { upsertPurchaseRequestRows } = await import("@/lib/google-sheets");
+    upsertPurchaseRequestRows(updated as any).catch(console.error);
+  }
+
+  await logActivity("PURCHASE_REOPENED", "PurchaseRequest", prId, adminId);
+  return updated;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

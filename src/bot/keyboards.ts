@@ -189,10 +189,12 @@ export function purchaseItemsMenuKeyboard(): Keyboard {
     .text("✏️ Edit Quantity")
     .text("💰 Set Prices")
     .row()
+    .text("🗑 Exclude Material")
     .text("📋 Review Materials")
-    .text("📝 Bulk Enter Materials")
     .row()
+    .text("📝 Bulk Enter Materials")
     .text("✅ Continue to Supplier")
+    .row()
     .text(MENU_LABELS.CANCEL)
     .resized();
 }
@@ -237,6 +239,8 @@ export function adminMrActionKeyboard(mrId: string, status: string): InlineKeybo
     kb.text("✅ Approve MR", `mr_approve:${mrId}`)
       .text("❌ Reject MR", `mr_reject:${mrId}`)
       .row();
+  } else if (status === "REJECTED") {
+    kb.text("🔄 Reopen / Review MR", `mr_reopen:${mrId}`).row();
   }
 
   kb.text("View Details", `mr_view:${mrId}`)
@@ -260,8 +264,30 @@ export function prActionKeyboard(prId: string, status: string): InlineKeyboard {
     kb.text("✅ Approve PR", `pr_approve:${prId}`)
       .text("❌ Reject PR", `pr_reject:${prId}`)
       .row();
+  } else if (status === "REJECTED") {
+    kb.text("🔄 Reopen / Review PR", `pr_reopen:${prId}`).row();
   }
   kb.text("📋 View Details", `pr_view:${prId}`);
+  return kb;
+}
+
+export function reopenReviewKeyboard(type: "mr" | "pr", id: string): InlineKeyboard {
+  return new InlineKeyboard()
+    .text("✅ Approve Now", `${type}_approve_confirm:${id}`)
+    .row()
+    .text("⏳ Restore to Pending", `${type}_reopen_confirm:${id}`)
+    .row()
+    .text("❌ Cancel", "admin_cancel");
+}
+
+export function excludeItemKeyboard(itemCount: number, items: Array<{ itemName: string; unitPrice: number }>): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  for (let i = 0; i < itemCount; i++) {
+    const isExcluded = items[i]?.unitPrice === 0;
+    const icon = isExcluded ? "❌ Excluded" : "✅ Included";
+    kb.text(`${icon}: #${i + 1} ${items[i]?.itemName ?? ""}`.slice(0, 30), `exclude_item:${i}`).row();
+  }
+  kb.text("⬅️ Back to Menu", "exclude_item:done");
   return kb;
 }
 

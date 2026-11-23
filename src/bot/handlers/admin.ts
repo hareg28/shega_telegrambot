@@ -38,6 +38,7 @@ import {
   manageBoqKeyboard,
   boqActionKeyboard,
   prActionKeyboard,
+  reopenReviewKeyboard,
   purchaserMrKeyboard,
   mrActionKeyboard,
   MENU_LABELS,
@@ -457,7 +458,7 @@ export async function handleMrApproveConfirm(ctx: Context, mrId: string) {
     const admin = await requireAdministrator(BigInt(from.id));
     const mr = await getMaterialRequestById(mrId);
 
-    if (!mr || mr.status !== "PENDING_APPROVAL") {
+    if (!mr || (mr.status !== "PENDING_APPROVAL" && mr.status !== "REJECTED")) {
       await ctx.answerCallbackQuery({ text: "Cannot approve — already processed" }).catch(() => {});
       return;
     }
@@ -491,6 +492,52 @@ export async function handleMrApproveConfirm(ctx: Context, mrId: string) {
           ? "❌ Please send /start first, then try again."
           : "❌ Failed to approve. Please try again.";
     await ctx.reply(message);
+  }
+}
+
+export async function handleMrReopenCallback(ctx: Context, mrId: string) {
+  const from = ctx.from;
+  if (!from) return;
+
+  await requireAdministrator(BigInt(from.id));
+  const mr = await getMaterialRequestById(mrId);
+  if (!mr) {
+    await ctx.answerCallbackQuery({ text: "Not found" });
+    return;
+  }
+
+  await ctx.answerCallbackQuery();
+  await ctx.reply(
+    `🔄 <b>Review Postponed/Rejected MR ${esc(mr.mrNumber)}</b>\n\n` +
+    `📁 Project: <b>${esc(mr.projectName)}</b>\n` +
+    `👤 Requested by: <b>${esc(mr.requestedBy?.fullName || "—")}</b>\n\n` +
+    `You can immediately approve this request or restore it to Pending Approval for review:`,
+    {
+      parse_mode: "HTML",
+      reply_markup: reopenReviewKeyboard("mr", mrId),
+    }
+  );
+}
+
+export async function handleMrReopenConfirm(ctx: Context, mrId: string) {
+  const from = ctx.from;
+  if (!from) return;
+
+  const admin = await requireAdministrator(BigInt(from.id));
+  try {
+    const { reopenMaterialRequest } = await import("@/lib/material-request");
+    const updated = await reopenMaterialRequest(mrId, admin.id);
+    await ctx.answerCallbackQuery({ text: "Restored to Pending" }).catch(() => {});
+    await ctx.reply(
+      `⏳ MR <b>${esc(updated.mrNumber)}</b> has been restored to <b>Pending Approval</b> for review.`,
+      {
+        parse_mode: "HTML",
+        reply_markup: mainMenuKeyboard(admin),
+      }
+    );
+  } catch (err: any) {
+    await ctx.answerCallbackQuery({ text: "Failed to reopen" }).catch(() => {});
+    await ctx.reply(`❌ Failed to reopen: ${err.message}`);
   }
 }
 
@@ -591,7 +638,7 @@ export async function handlePrApproveConfirm(ctx: Context, prId: string) {
     const admin = await requireAdministrator(BigInt(from.id));
     const pr = await getPurchaseRequestById(prId);
 
-    if (!pr || pr.status !== "PENDING_APPROVAL") {
+    if (!pr || (pr.status !== "PENDING_APPROVAL" && pr.status !== "REJECTED")) {
       await ctx.answerCallbackQuery({ text: "Cannot approve — already processed" }).catch(() => {});
       return;
     }
@@ -625,6 +672,53 @@ export async function handlePrApproveConfirm(ctx: Context, prId: string) {
           ? "❌ Please send /start first, then try again."
           : "❌ Failed to approve. Please try again.";
     await ctx.reply(message);
+  }
+}
+
+export async function handlePrReopenCallback(ctx: Context, prId: string) {
+  const from = ctx.from;
+  if (!from) return;
+
+  await requireAdministrator(BigInt(from.id));
+  const pr = await getPurchaseRequestById(prId);
+  if (!pr) {
+    await ctx.answerCallbackQuery({ text: "Not found" });
+    return;
+  }
+
+  await ctx.answerCallbackQuery();
+  await ctx.reply(
+    `🔄 <b>Review Postponed/Rejected PR ${esc(pr.prNumber)}</b>\n\n` +
+    `📄 MR: <b>${esc(pr.materialRequest?.mrNumber || "—")}</b>\n` +
+    `🎯 Supplier: <b>${esc(pr.supplierName)}</b>\n` +
+    `🛒 Purchaser: <b>${esc(pr.purchaser?.fullName || "—")}</b>\n\n` +
+    `You can immediately approve this purchase or restore it to Pending Approval for review:`,
+    {
+      parse_mode: "HTML",
+      reply_markup: reopenReviewKeyboard("pr", prId),
+    }
+  );
+}
+
+export async function handlePrReopenConfirm(ctx: Context, prId: string) {
+  const from = ctx.from;
+  if (!from) return;
+
+  const admin = await requireAdministrator(BigInt(from.id));
+  try {
+    const { reopenPurchaseRequest } = await import("@/lib/purchase-request");
+    const updated = await reopenPurchaseRequest(prId, admin.id);
+    await ctx.answerCallbackQuery({ text: "Restored to Pending" }).catch(() => {});
+    await ctx.reply(
+      `⏳ PR <b>${esc(updated?.prNumber ?? "")}</b> has been restored to <b>Pending Approval</b> for review.`,
+      {
+        parse_mode: "HTML",
+        reply_markup: mainMenuKeyboard(admin),
+      }
+    );
+  } catch (err: any) {
+    await ctx.answerCallbackQuery({ text: "Failed to reopen" }).catch(() => {});
+    await ctx.reply(`❌ Failed to reopen: ${err.message}`);
   }
 }
 
@@ -1642,7 +1736,7 @@ export async function handleAdminDraftMessage(
           return true;
         }
         const newProj = await prisma.project.create({ data: { name } });
-        upsertProjectRow(newProj).catch(console.error);
+        await upsertProjectRow(newProj).catch(console.error);
         await clearDraft(BigInt(from.id));
         const admin = await requireAdministrator(BigInt(from.id));
         await ctx.reply(`✅ Project "${name}" registered successfully.`, {
@@ -1682,7 +1776,7 @@ export async function handleAdminDraftMessage(
           where: { id: projectId },
           data: { boqList: updatedList },
         });
-        upsertProjectRow(updatedProj).catch(console.error);
+        await upsertProjectRow(updatedProj).catch(console.error);
         await clearDraft(BigInt(from.id));
         const admin = await requireAdministrator(BigInt(from.id));
         await ctx.reply(`✅ Added ${boqValues.length} BOQ reference(s) to project "${project.name}".`, {
@@ -1722,7 +1816,7 @@ export async function handleAdminDraftMessage(
           where: { id: projectId },
           data: { boqList: updatedList },
         });
-        upsertProjectRow(updatedProj).catch(console.error);
+        await upsertProjectRow(updatedProj).catch(console.error);
         await clearDraft(BigInt(from.id));
         const admin = await requireAdministrator(BigInt(from.id));
         await ctx.reply(`✅ Added ${boqValues.length} BOQ references to project "${project.name}".`, {
@@ -1762,7 +1856,7 @@ export async function handleAdminDraftMessage(
           where: { id: projectId },
           data: { boqList: updatedList },
         });
-        upsertProjectRow(updatedProj).catch(console.error);
+        await upsertProjectRow(updatedProj).catch(console.error);
         await clearDraft(BigInt(from.id));
         const admin = await requireAdministrator(BigInt(from.id));
         await ctx.reply(`✅ BOQ "${oldBoq}" has been updated to "${newBoq}" in project "${project.name}".`, {
@@ -1799,7 +1893,7 @@ export async function handleAdminDraftMessage(
           where: { id: projectId },
           data: { name: newName },
         });
-        upsertProjectRow(project).catch(console.error);
+        await upsertProjectRow(project).catch(console.error);
         await clearDraft(BigInt(from.id));
         const admin = await requireAdministrator(BigInt(from.id));
         await ctx.reply(`✅ Project has been renamed to "${newName}".`, {
@@ -2293,7 +2387,7 @@ export async function handleProjectDeactivateCallback(ctx: Context, projectId: s
     where: { id: projectId },
     data: { isActive: false },
   });
-  upsertProjectRow(updated).catch(console.error);
+  await upsertProjectRow(updated).catch(console.error);
 
   await ctx.answerCallbackQuery({ text: "Project deactivated" });
   await handleManageProjects(ctx);
@@ -2308,7 +2402,7 @@ export async function handleProjectReactivateCallback(ctx: Context, projectId: s
     where: { id: projectId },
     data: { isActive: true },
   });
-  upsertProjectRow(updated).catch(console.error);
+  await upsertProjectRow(updated).catch(console.error);
 
   await ctx.answerCallbackQuery({ text: "Project reactivated" });
   await handleManageProjects(ctx);

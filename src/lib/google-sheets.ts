@@ -776,23 +776,41 @@ export async function syncAllProjectsInOrder(): Promise<number> {
   const sheets = await getSheetsClient();
   if (!sheets) return 0;
 
-  try {
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId: SHEET_ID,
-      range: `${PROJECT_SHEET}!A2:E`,
-    });
-  } catch (err) {
-    console.error("Error clearing Project sheet:", err);
-  }
+  await ensureWorksheet(sheets, PROJECT_SHEET, PROJECT_HEADERS);
 
   const { default: prisma } = await import("./prisma");
   const projects = await prisma.project.findMany({
     orderBy: { name: "asc" },
   });
 
-  for (const p of projects) {
-    await upsertProjectRow(p);
+  const rows = projects.map((p) => {
+    const boqs = p.boqList ?? [];
+    return [
+      p.name,
+      p.isActive ? "Active" : "Inactive",
+      boqs.length,
+      boqs.join(", "),
+      formatDate(p.createdAt ?? new Date()),
+    ];
+  });
+
+  try {
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: SHEET_ID,
+      range: `${PROJECT_SHEET}!A2:E`,
+    });
+    if (rows.length > 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: `${PROJECT_SHEET}!A2:E${rows.length + 1}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: rows },
+      });
+    }
+  } catch (err) {
+    console.error("Error clearing or updating Project sheet:", err);
   }
+
   console.log(`Full Project sheet resync complete: ${projects.length} projects`);
   return projects.length;
 }
@@ -802,23 +820,41 @@ export async function syncAllSuppliersInOrder(): Promise<number> {
   const sheets = await getSheetsClient();
   if (!sheets) return 0;
 
-  try {
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId: SHEET_ID,
-      range: `${SUPPLIER_SHEET}!A2:H`,
-    });
-  } catch (err) {
-    console.error("Error clearing Supplier sheet:", err);
-  }
+  await ensureWorksheet(sheets, SUPPLIER_SHEET, SUPPLIER_HEADERS);
 
   const { default: prisma } = await import("./prisma");
   const suppliers = await prisma.supplier.findMany({
     orderBy: { name: "asc" },
   });
 
-  for (const s of suppliers) {
-    await appendSupplierRow(s);
+  const rows = suppliers.map((s) => [
+    s.name,
+    s.companyName ?? "",
+    s.phone ?? "",
+    s.vatRegistered ? "Yes" : "No",
+    s.bankName ?? "",
+    s.accountNumber ?? "",
+    formatDate(s.createdAt ?? new Date()),
+    s.isActive ? "Active" : "Inactive",
+  ]);
+
+  try {
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: SHEET_ID,
+      range: `${SUPPLIER_SHEET}!A2:H`,
+    });
+    if (rows.length > 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: `${SUPPLIER_SHEET}!A2:H${rows.length + 1}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: rows },
+      });
+    }
+  } catch (err) {
+    console.error("Error clearing or updating Supplier sheet:", err);
   }
+
   console.log(`Full Supplier sheet resync complete: ${suppliers.length} suppliers`);
   return suppliers.length;
 }

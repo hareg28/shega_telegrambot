@@ -21,6 +21,10 @@ import {
   handlePrApproveCallback,
   handlePrRejectCallback,
   handlePrApproveConfirm,
+  handleMrReopenCallback,
+  handleMrReopenConfirm,
+  handlePrReopenCallback,
+  handlePrReopenConfirm,
   handleSearchCommand,
   handleReportCommand,
   handleMrViewCallback,
@@ -73,6 +77,7 @@ import {
   startPurchaseFromMr,
   handlePurchaseDraftMessage,
   handleEditQtyCallback,
+  handleExcludeItemCallback,
   handleSetPriceCallback,
   handlePurchaseHistory,
   handleSelectSupplierCallback,
@@ -387,6 +392,22 @@ export function createBot(): Bot {
       await handlePrRejectCallback(ctx, data.replace("pr_reject:", ""));
       return;
     }
+    if (data.startsWith("mr_reopen_confirm:")) {
+      await handleMrReopenConfirm(ctx, data.replace("mr_reopen_confirm:", ""));
+      return;
+    }
+    if (data.startsWith("mr_reopen:")) {
+      await handleMrReopenCallback(ctx, data.replace("mr_reopen:", ""));
+      return;
+    }
+    if (data.startsWith("pr_reopen_confirm:")) {
+      await handlePrReopenConfirm(ctx, data.replace("pr_reopen_confirm:", ""));
+      return;
+    }
+    if (data.startsWith("pr_reopen:")) {
+      await handlePrReopenCallback(ctx, data.replace("pr_reopen:", ""));
+      return;
+    }
     if (data.startsWith("pr_view:")) {
       await handlePrViewCallback(ctx, data.replace("pr_view:", ""));
       return;
@@ -510,6 +531,10 @@ export function createBot(): Bot {
         return;
       }
       await handleSetPriceCallback(ctx, parseInt(idx, 10));
+      return;
+    }
+    if (data.startsWith("exclude_item:")) {
+      await handleExcludeItemCallback(ctx, data.replace("exclude_item:", ""));
       return;
     }
     if (data.startsWith("export_pdf:")) {
