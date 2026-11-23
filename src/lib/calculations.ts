@@ -28,7 +28,7 @@ export function getRequesterDisplayName(mr: {
 }
 
 export interface DraftData {
-  flowType?: "mr" | "purchase" | "supplier";
+  flowType?: "mr" | "purchase" | "supplier" | "finance";
   materialRequestId?: string;
   mrNumber?: string;
   projectName?: string;
@@ -49,10 +49,12 @@ export interface DraftData {
   accountNumber?: string;
   supplierAccountNumber?: string; // For compatibility
   supplierId?: string;
-  // Purchase fields
+  // Purchase & Payment fields
   vatStatus?: string;
   items?: MaterialDraftItem[] | PurchaseDraftItem[];
   editingItemIndex?: number;
+  method?: string;
+  total?: number;
   // Per-item edit state
   _currentItemName?: string;
   _currentQuantity?: number;

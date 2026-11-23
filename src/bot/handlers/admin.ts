@@ -947,7 +947,7 @@ export async function handleManageAssignCallback(ctx: Context, role: string) {
   const from = ctx.from;
   if (!from) return;
 
-  const validRoles = ["PURCHASER", "REQUESTER", "VIEWER", "ADMINISTRATOR", "OFFICIAL_NAME"];
+  const validRoles = ["PURCHASER", "REQUESTER", "VIEWER", "ADMINISTRATOR", "FINANCE", "OFFICIAL_NAME"];
   if (!validRoles.includes(role)) {
     await ctx.answerCallbackQuery({ text: "Invalid option" });
     return;
@@ -993,6 +993,7 @@ export async function handleManageAssignCallback(ctx: Context, role: string) {
     PURCHASER: "🛒 Purchaser",
     REQUESTER: "📋 Requester",
     VIEWER: "👁 Viewer",
+    FINANCE: "💳 Finance",
   };
   const roleName = roleDisplayNames[role] ?? role;
   const count = await prisma.user.count({ where: { role: role as UserRole } });
@@ -1026,6 +1027,7 @@ export async function handleUserRoleList(ctx: Context, role: string) {
     PURCHASER: "🛒 Purchaser",
     REQUESTER: "📋 Requester",
     VIEWER: "👁 Viewer",
+    FINANCE: "💳 Finance",
   };
   const roleName = roleDisplayNames[role] ?? role;
 
@@ -1088,6 +1090,7 @@ export async function handleUserRoleAdd(ctx: Context, role: string) {
     REQUESTER: "📋 Requester",
     VIEWER: "👁 Viewer",
     ADMINISTRATOR: "🔑 Administrator",
+    FINANCE: "💳 Finance",
   };
 
   await ctx.reply(
@@ -1112,6 +1115,7 @@ export async function handleUserRoleRemoveMenu(ctx: Context, role: string) {
     PURCHASER: "🛒 Purchaser",
     REQUESTER: "📋 Requester",
     VIEWER: "👁 Viewer",
+    FINANCE: "💳 Finance",
   };
   const roleName = roleDisplayNames[role] ?? role;
 
@@ -1170,6 +1174,7 @@ export async function handleUserRoleRemove(ctx: Context, role: string, userId: s
     PURCHASER: "🛒 Purchaser",
     REQUESTER: "📋 Requester",
     VIEWER: "👁 Viewer",
+    FINANCE: "💳 Finance",
   };
   const roleName = roleDisplayNames[role] ?? role;
 
@@ -1243,6 +1248,7 @@ export async function handleUserRoleRemoveConfirm(ctx: Context, role: string, us
     PURCHASER: "🛒 Purchaser",
     REQUESTER: "📋 Requester",
     VIEWER: "👁 Viewer",
+    FINANCE: "💳 Finance",
   };
   const roleName = roleDisplayNames[role] ?? role;
 
@@ -1381,7 +1387,7 @@ async function handleAdminAssignUser(
     return;
   }
 
-  const validRoles = ["PURCHASER", "REQUESTER", "VIEWER", "ADMINISTRATOR"];
+  const validRoles = ["PURCHASER", "REQUESTER", "VIEWER", "ADMINISTRATOR", "FINANCE"];
   if (!validRoles.includes(assignRole)) {
     await ctx.reply("❌ Invalid role. Operation cancelled.", {
       reply_markup: mainMenuKeyboard(admin),
@@ -1394,6 +1400,7 @@ async function handleAdminAssignUser(
     REQUESTER: "📋 Requester",
     VIEWER: "👁 Viewer",
     ADMINISTRATOR: "🔑 Administrator",
+    FINANCE: "💳 Finance",
   };
 
   // If the target is the admin themselves AND they are assigning a non-admin role,

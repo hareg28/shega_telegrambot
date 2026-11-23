@@ -253,6 +253,9 @@ export function formatMrDetails(mr: MRFull, hidePrices: boolean = false): string
       text += `👉 Total Before VAT: <b>ETB ${formatMoney(safeNumber(activePr.subtotal))}</b>\n`;
       text += `👉 VAT Amount:     <b>ETB ${formatMoney(safeNumber(activePr.vatAmount))}</b>\n`;
       text += `👉 Total with VAT: <b>ETB ${formatMoney(safeNumber(activePr.grandTotal))}</b>\n\n`;
+      const isPaid = (activePr as any).paymentStatus === "PAID";
+      const payMethod = (activePr as any).paymentMethod === "CASH" ? "💵 Cash" : (activePr as any).paymentMethod === "CHECK" ? "📝 Check" : "—";
+      text += `💳 <b>Payment Status:</b> ${isPaid ? `✅ <b>Paid</b> (${payMethod})` : "⏳ <b>Unpaid</b> (Pending Finance)"}\n\n`;
     }
   } else {
     const sectionsMap = new Map<string, typeof mr.items>();
@@ -321,8 +324,12 @@ export function formatPrListItem(
       : "⏳";
 
   const mrLabel = pr.materialRequest?.mrNumber ? ` | MR: ${pr.materialRequest.mrNumber}` : "";
+  const isPaid = (pr as any).paymentStatus === "PAID";
+  const payLabel = isPaid
+    ? ` | 💳 Paid (${(pr as any).paymentMethod === "CASH" ? "Cash" : "Check"})`
+    : " | 💳 Unpaid";
 
-  return `${statusEmoji} *${pr.prNumber}* — ${pr.materialRequest?.projectName || "—"}\n   ${statusLabel(pr.status)}${mrLabel}`;
+  return `${statusEmoji} *${pr.prNumber}* — ${pr.materialRequest?.projectName || "—"}\n   ${statusLabel(pr.status)}${mrLabel}${payLabel}`;
 }
 
 export function formatPrDetails(pr: any): string {
@@ -346,6 +353,12 @@ export function formatPrDetails(pr: any): string {
     text += `💳 Account: <b>${esc(pr.accountNumber)}</b>\n`;
   }
   text += `📊 Status: <b>${esc(statusLabel(pr.status))}</b>\n`;
+  const isPaid = pr.paymentStatus === "PAID";
+  const payMethod = pr.paymentMethod === "CASH" ? "💵 Cash" : pr.paymentMethod === "CHECK" ? "📝 Check" : "—";
+  text += `💳 Payment: <b>${isPaid ? `✅ Paid (${payMethod}${pr.paymentReference ? ` - Ref: ${esc(pr.paymentReference)}` : ""})` : "⏳ Unpaid (Pending Finance)"}</b>\n`;
+  if (isPaid && pr.paidAt) {
+    text += `📅 Paid Date: <b>${formatDate(pr.paidAt)}</b>\n`;
+  }
   if (pr.actualDeliveryDate) {
     text += `✅ Delivered On: <b>${formatDate(pr.actualDeliveryDate)}</b>\n`;
   }
@@ -408,6 +421,12 @@ export function formatHelp(role: string): string {
     text += `• 📑 View All Requests\n`;
     text += `• 📜 Purchase History\n`;
     text += `• /search &lt;term&gt;\n\n`;
+  }
+
+  if (role === "FINANCE" || role === "ADMINISTRATOR") {
+    text += `<b>Finance:</b>\n`;
+    text += `• 💳 Pending Payments — View & process approved PR payments\n`;
+    text += `• 📜 Payment History — View completed payments\n\n`;
   }
 
   text += `MR/PR numbers and dates are auto-generated.\nVAT is 15% calculated at once.\nMR Line IDs track items across the workflow.`;

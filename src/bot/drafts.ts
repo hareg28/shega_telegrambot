@@ -17,7 +17,7 @@ export async function upsertDraft(
   step: string,
   data: DraftData,
   userId?: string,
-  flowType: "mr" | "purchase" | "supplier" = "mr"
+  flowType: "mr" | "purchase" | "supplier" | "finance" = "mr"
 ) {
   const json = toJson({ ...data, flowType });
   return prisma.formDraft.upsert({

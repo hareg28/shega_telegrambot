@@ -98,6 +98,13 @@ import {
   handleDeliveryPurchasedCallback,
   handleDeliveryCompletedCallback,
 } from "./handlers/delivery";
+import {
+  handlePendingPayments,
+  handlePaymentHistory,
+  handleFinancePayCallback,
+  handleFinanceConfirmPayment,
+  handleFinanceDraftMessage,
+} from "./handlers/finance";
 import { MENU_LABELS } from "./keyboards";
 import { findOrCreateUser, requireUser, hasRole } from "@/lib/auth";
 import { getMaterialRequestById } from "@/lib/material-request";
@@ -214,6 +221,8 @@ export function createBot(): Bot {
   bot.hears(MENU_LABELS.REGISTER_BOQ, handleManageBoq);
   bot.hears(MENU_LABELS.APPROVE_MR, handleApproveMr);
   bot.hears(MENU_LABELS.REJECT_MR, handleRejectMr);
+  bot.hears(MENU_LABELS.FINANCE_PENDING_PAYMENTS, handlePendingPayments);
+  bot.hears(MENU_LABELS.FINANCE_PAYMENT_HISTORY, handlePaymentHistory);
   bot.hears(MENU_LABELS.CANCEL, handleCancel);
 
   bot.on("callback_query:data", async (ctx) => {
@@ -531,6 +540,32 @@ export function createBot(): Bot {
       await handleAdminCancel(ctx);
       return;
     }
+    if (data.startsWith("finance_pay:")) {
+      const parts = data.replace("finance_pay:", "").split(":");
+      const method = parts[0] as "CASH" | "CHECK";
+      const prId = parts.slice(1).join(":");
+      await handleFinancePayCallback(ctx, method, prId);
+      return;
+    }
+    if (data.startsWith("finance_confirm:")) {
+      const parts = data.replace("finance_confirm:", "").split(":");
+      const method = parts[0] as "CASH" | "CHECK";
+      const prId = parts.slice(1).join(":");
+      await handleFinanceConfirmPayment(ctx, method, prId);
+      return;
+    }
+    if (data === "finance_cancel") {
+      const from = ctx.from;
+      if (from) {
+        const { clearDraft } = await import("./drafts");
+        const { mainMenuKeyboard } = await import("./keyboards");
+        await clearDraft(BigInt(from.id));
+        const user = await requireUser(BigInt(from.id));
+        await ctx.answerCallbackQuery({ text: "Cancelled" }).catch(() => {});
+        await ctx.reply("❌ Payment cancelled.", { reply_markup: mainMenuKeyboard(user) });
+      }
+      return;
+    }
 
     await ctx.answerCallbackQuery();
   });
@@ -563,6 +598,11 @@ export function createBot(): Bot {
       if (draft.flowType === "supplier") {
         const handled = await handleSupplierDraftMessage(ctx, text);
         if (handled) return;
+      }
+
+      if (draft.flowType === "finance" || draft.step === "awaiting_check_reference") {
+        await handleFinanceDraftMessage(ctx, text);
+        return;
       }
 
       if (draft.step === "awaiting_status_mr_number") {

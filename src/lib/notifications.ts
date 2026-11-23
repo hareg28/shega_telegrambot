@@ -37,7 +37,7 @@ function cleanPrNumber(prNumber: string): string {
   return prNumber.replace(/^PR-/i, "");
 }
 
-async function getUsersByRole(role: "ADMINISTRATOR" | "PURCHASER" | "REQUESTER") {
+async function getUsersByRole(role: "ADMINISTRATOR" | "PURCHASER" | "REQUESTER" | "FINANCE") {
   return prisma.user.findMany({ where: { role } });
 }
 
@@ -325,6 +325,131 @@ export async function notifyPurchaseApproved(mrId: string, prId: string) {
     `Purchase approved for ${mr.mrNumber} (PR: ${pr.prNumber})`,
     mrId
   );
+
+  // Send to Finance team for payment
+  await notifyFinancePurchaseApproved(mrId, prId).catch(console.error);
+}
+
+export async function notifyFinancePurchaseApproved(mrId: string, prId: string) {
+  const mr = await prisma.materialRequest.findUnique({
+    where: { id: mrId },
+    include: { requestedBy: true, items: true },
+  });
+  const pr = await prisma.purchaseRequest.findUnique({
+    where: { id: prId },
+    include: { purchaser: true, approvedBy: true, items: true },
+  });
+  if (!mr || !pr) return;
+
+  const financeUsers = await getUsersByRole("FINANCE");
+  if (financeUsers.length === 0) return;
+
+  const company = getCompanyName();
+  const boqName = mr.boq?.trim() || "Material List";
+  const requester = getRequesterDisplayName(mr);
+
+  const approvals = await prisma.approvalHistory.findMany({
+    where: { materialRequestId: mrId, action: "MR_APPROVED" },
+    include: { performedBy: true },
+  });
+  const siteEngineer = approvals[0]?.performedBy?.fullName || "—";
+
+  let summary = `<b>${esc(company)}</b>\n\n`;
+  summary += `📅 Date: <b>${formatDate(mr.requestDate)}</b>\n`;
+  summary += `👤 Requested By: <b>${esc(requester)}</b>\n`;
+  summary += `🏗 Project Type: <b>${esc(mr.projectType ?? "—")}</b>\n`;
+  summary += `📁 Project: <b>${esc(mr.projectName)}</b>\n`;
+  summary += `📄 MR No. : <b>${esc(cleanMrNumber(mr.mrNumber))}</b>\n`;
+  summary += `📄 PR No. : <b>${esc(cleanPrNumber(pr.prNumber))}</b>\n\n`;
+
+  summary += `🎯 <b>Supplier Information</b>\n`;
+  summary += `👤 Name: <b>${esc(pr.supplierName)}</b>\n`;
+  if (pr.supplierCompanyName) {
+    summary += `🏢 Company Name: <b>${esc(pr.supplierCompanyName)}</b>\n`;
+  }
+  if (pr.supplierBankName) {
+    summary += `🏦 Bank Name: <b>${esc(pr.supplierBankName)}</b>\n`;
+  }
+  if (pr.accountNumber) {
+    summary += `💳 Account Number: <b>${esc(pr.accountNumber)}</b>\n\n`;
+  } else {
+    summary += `\n`;
+  }
+
+  summary += `📦 <b>BOQ Material — ${esc(boqName)}</b>\n\n`;
+  pr.items.forEach((item, i) => {
+    const qty = decimalToNumber(item.quantity);
+    const price = decimalToNumber(item.unitPrice);
+    const total = roundMoney(qty * price);
+    summary += `${i + 1}. <b>${esc(item.itemName)}</b> — <b>${qty} ${esc(item.unit)}</b>\n`;
+    summary += `    💰 Price: ${qty} × ${formatMoney(price)} = ETB <b>${formatMoney(total)}</b>\n`;
+  });
+
+  const grandTotal = decimalToNumber(pr.grandTotal);
+  const isCash = grandTotal < 50000;
+
+  summary += `\n💰 <b>Cost Summary</b>\n\n`;
+  summary += `👉 Total Before VAT: <b>ETB ${formatMoney(decimalToNumber(pr.subtotal))}</b>\n`;
+  summary += `👉 VAT Amount:       <b>ETB ${formatMoney(decimalToNumber(pr.vatAmount))}</b>\n`;
+  summary += `👉 Total with VAT:   <b>ETB ${formatMoney(grandTotal)}</b>\n\n`;
+
+  summary += `✅ <b>Approvals:</b>\n`;
+  summary += `• Site Engineer: <b>${esc(siteEngineer)}</b>\n`;
+  summary += `• Project Manager: <b>${esc(pr.approvedBy?.fullName || "—")}</b>\n\n`;
+
+  summary += `💳 <b>Payment Required</b>\n`;
+  if (isCash) {
+    summary += `💡 Payment Rule: Total &lt; 50,000 ETB → Recommended: <b>💵 Cash</b>\n`;
+  } else {
+    summary += `💡 Payment Rule: Total ≥ 50,000 ETB → Recommended: <b>📝 Check</b>\n`;
+  }
+
+  const { financePaymentActionKeyboard } = await import("@/bot/keyboards");
+  const kb = financePaymentActionKeyboard(pr.id, grandTotal);
+
+  for (const fUser of financeUsers) {
+    await sendMessage(fUser.telegramId, `💳 <b>New Payment Request</b>\n\n${summary}`, kb);
+    await createNotification(fUser.id, `Payment required for PR: ${pr.prNumber} (${mr.projectName})`, mrId);
+  }
+}
+
+export async function notifyPaymentCompleted(prId: string, paidByUserId: string) {
+  const pr = await prisma.purchaseRequest.findUnique({
+    where: { id: prId },
+    include: {
+      purchaser: true,
+      paidBy: true,
+      materialRequest: { select: { mrNumber: true, projectName: true, id: true } },
+    },
+  });
+  if (!pr) return;
+
+  const methodLabel = pr.paymentMethod === "CASH" ? "💵 Cash" : "📝 Check";
+  const refText = pr.paymentReference ? `\n🔖 Reference/Check #: <b>${esc(pr.paymentReference)}</b>` : "";
+  const payerName = pr.paidBy?.fullName || "Finance Team";
+
+  const msg =
+    `💳 <b>Payment Completed</b>\n\n` +
+    `PR No.: <b>${esc(cleanPrNumber(pr.prNumber))}</b> (MR: ${esc(cleanMrNumber(pr.materialRequest.mrNumber))})\n` +
+    `📁 Project: <b>${esc(pr.materialRequest.projectName)}</b>\n` +
+    `🎯 Supplier: <b>${esc(pr.supplierName)}</b>\n` +
+    `💰 Total Paid: <b>ETB ${formatMoney(decimalToNumber(pr.grandTotal))}</b>\n` +
+    `💳 Method: <b>${methodLabel}</b>` +
+    refText +
+    `\n👤 Processed By: <b>${esc(payerName)}</b>\n\n` +
+    `<i>The purchase can now proceed to delivery tracking.</i>`;
+
+  // Notify Purchaser
+  if (pr.purchaser?.telegramId) {
+    await sendMessage(pr.purchaser.telegramId, msg);
+    await createNotification(pr.purchaserId, `Payment completed for PR: ${pr.prNumber}`, pr.materialRequest.id);
+  }
+
+  // Notify Admins
+  const admins = await getUsersByRole("ADMINISTRATOR");
+  for (const admin of admins) {
+    await sendMessage(admin.telegramId, msg);
+  }
 }
 
 export async function notifyPurchaseRejected(mrId: string, prId: string, remarks?: string) {

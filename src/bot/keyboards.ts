@@ -34,9 +34,17 @@ export function mainMenuKeyboard(user: User): Keyboard {
       .text(MENU_LABELS.HELP);
   }
 
+  if (role === "FINANCE") {
+    kb.text(MENU_LABELS.FINANCE_PENDING_PAYMENTS)
+      .text(MENU_LABELS.FINANCE_PAYMENT_HISTORY)
+      .row()
+      .text(MENU_LABELS.STATUS)
+      .text(MENU_LABELS.HELP);
+  }
+
   if (role === "REQUESTER") {
     // already has help
-  } else if (role !== "VIEWER" && role !== "ADMINISTRATOR") {
+  } else if (role !== "VIEWER" && role !== "ADMINISTRATOR" && role !== "FINANCE") {
     kb.row().text(MENU_LABELS.HELP);
   }
 
@@ -320,8 +328,9 @@ export function manageRolePickKeyboard(): InlineKeyboard {
     .text("📋 Requester", "manage_assign:REQUESTER")
     .row()
     .text("👁 Viewer", "manage_assign:VIEWER")
-    .text("🔑 Administrator", "manage_assign:ADMINISTRATOR")
+    .text("💳 Finance", "manage_assign:FINANCE")
     .row()
+    .text("🔑 Administrator", "manage_assign:ADMINISTRATOR")
     .text("🏷 Link Official Company Name", "manage_assign:OFFICIAL_NAME")
     .row()
     .text("❌ Cancel", "admin_cancel");
@@ -333,6 +342,7 @@ export function roleMenuKeyboard(role: string): InlineKeyboard {
     PURCHASER: "Purchaser",
     REQUESTER: "Requester",
     VIEWER: "Viewer",
+    FINANCE: "Finance",
   };
   const label = roleLabels[role] ?? role;
 
@@ -436,6 +446,8 @@ export const MENU_LABELS = {
   PURCHASE_HISTORY: "📜 Purchase History",
   SUPPLIER_MASTER: "🏢 Supplier Master",
   DELIVERY_TRACKING: "🚚 Delivery Tracking",
+  FINANCE_PENDING_PAYMENTS: "💳 Pending Payments",
+  FINANCE_PAYMENT_HISTORY: "📜 Payment History",
   VIEW_ALL: "📑 View All Requests",
   MANAGE_USERS: "👥 Manage Users",
   MANAGE_PROJECTS: "📁 Manage Projects",
@@ -483,4 +495,27 @@ export function deliveryUpdateKeyboard(prId: string): InlineKeyboard {
     .text("✅ Mark Delivered", `delivery_delivered:${prId}`)
     .row()
     .text("⚠️ Mark Delayed", `delivery_delayed:${prId}`);
+}
+
+export function financePaymentActionKeyboard(prId: string, grandTotal: number): InlineKeyboard {
+  const isCashRecommended = grandTotal < 50000;
+  const kb = new InlineKeyboard();
+  if (isCashRecommended) {
+    kb.text("💵 Pay via Cash ⭐", `finance_pay:CASH:${prId}`)
+      .text("📝 Pay via Check", `finance_pay:CHECK:${prId}`)
+      .row();
+  } else {
+    kb.text("📝 Pay via Check ⭐", `finance_pay:CHECK:${prId}`)
+      .text("💵 Pay via Cash", `finance_pay:CASH:${prId}`)
+      .row();
+  }
+  kb.text("📋 View PR Details", `pr_view:${prId}`);
+  return kb;
+}
+
+export function financeConfirmPaymentKeyboard(prId: string, method: "CASH" | "CHECK"): InlineKeyboard {
+  return new InlineKeyboard()
+    .text(`✅ Confirm ${method === "CASH" ? "Cash" : "Check"} Payment`, `finance_confirm:${method}:${prId}`)
+    .row()
+    .text("❌ Cancel", "finance_cancel");
 }

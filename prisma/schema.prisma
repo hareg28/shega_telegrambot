@@ -25,6 +25,7 @@ model User {
   materialRequests MaterialRequest[]  @relation("Requester")
   purchaseRequests PurchaseRequest[]  @relation("Purchaser")
   approvedPrs      PurchaseRequest[]  @relation("ApprovedBy")
+  paidPurchases    PurchaseRequest[]  @relation("PaidBy")
   approvalHistory  ApprovalHistory[]  @relation("PerformedBy")
   notifications    Notification[]
   formDrafts       FormDraft[]
@@ -165,6 +166,14 @@ model PurchaseRequest {
   rejectionReason   String?
   purchasedDate     DateTime?
 
+  // Payment
+  paymentStatus     PaymentStatus  @default(UNPAID)
+  paymentMethod     PaymentMethod?
+  paidAt            DateTime?
+  paidById          String?
+  paidBy            User?          @relation("PaidBy", fields: [paidById], references: [id])
+  paymentReference  String?
+
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
@@ -264,6 +273,17 @@ enum UserRole {
   ADMINISTRATOR
   VIEWER
   SUSPENDED
+  FINANCE
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+}
+
+enum PaymentMethod {
+  CASH
+  CHECK
 }
 
 enum RequestStatus {

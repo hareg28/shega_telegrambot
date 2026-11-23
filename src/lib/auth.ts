@@ -135,6 +135,10 @@ export async function requirePurchaser(telegramId: bigint) {
   return requireRole(telegramId, "PURCHASER", "ADMINISTRATOR");
 }
 
+export async function requireFinance(telegramId: bigint) {
+  return requireRole(telegramId, "FINANCE", "ADMINISTRATOR");
+}
+
 export async function requireRequester(telegramId: bigint) {
   return requireRole(telegramId, "REQUESTER");
 }
@@ -176,6 +180,8 @@ export function roleLabel(role: UserRole): string {
       return "Purchaser";
     case "VIEWER":
       return "Viewer";
+    case "FINANCE":
+      return "Finance";
     case "SUSPENDED":
       return "Suspended";
     default:
