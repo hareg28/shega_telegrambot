@@ -65,10 +65,16 @@ export async function findOrCreateUser(
     const envRole = resolveRoleFromTelegramId(telegramId);
 
     if (existing) {
+      // If suspended, do NOT update their role or re-activate them
+      if (existing.role === "SUSPENDED") {
+        return existing;
+      }
+
       const updates: Partial<User> = {};
       if (username && username !== existing.telegramUsername) {
         updates.telegramUsername = username;
       }
+      // Only upgrade role from env config — never downgrade a manually-assigned role
       if (existing.role !== envRole && envRole !== "REQUESTER") {
         updates.role = envRole;
       }
@@ -101,6 +107,9 @@ export async function requireUser(telegramId: bigint) {
     });
     if (!user) {
       throw new Error("NOT_REGISTERED");
+    }
+    if (user.role === "SUSPENDED") {
+      throw new Error("SUSPENDED");
     }
     return user;
   });
@@ -167,6 +176,8 @@ export function roleLabel(role: UserRole): string {
       return "Purchaser";
     case "VIEWER":
       return "Viewer";
+    case "SUSPENDED":
+      return "Suspended";
     default:
       return role;
   }

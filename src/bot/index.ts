@@ -32,6 +32,7 @@ import {
   handleUserRoleRemoveMenu,
   handleUserRoleRemove,
   handleUserRoleRemoveConfirm,
+  handleUserRoleRestore,
   handleAdminCancel,
   handleAdminDraftMessage,
   handleManageProjects,
@@ -119,11 +120,21 @@ export function createBot(): Bot {
   bot.use(async (ctx, next) => {
     const from = ctx.from;
     if (from) {
-      await findOrCreateUser(
+      const user = await findOrCreateUser(
         BigInt(from.id),
         from.username,
         [from.first_name, from.last_name].filter(Boolean).join(" ")
       );
+      // Block suspended users from all interactions (except /start which shows them the message)
+      if (user.role === "SUSPENDED") {
+        const isStartCommand =
+          ctx.message?.text === "/start" ||
+          (ctx.message?.text?.startsWith("/start ") ?? false);
+        if (!isStartCommand) {
+          await ctx.reply("🚫 Your account has been suspended. Contact your administrator.");
+          return;
+        }
+      }
     }
     await next();
   });
@@ -423,6 +434,10 @@ export function createBot(): Bot {
     if (data.startsWith("user_role_remove:")) {
       const parts = data.replace("user_role_remove:", "").split(":");
       await handleUserRoleRemove(ctx, parts[0], parts[1]);
+      return;
+    }
+    if (data.startsWith("user_role_restore:")) {
+      await handleUserRoleRestore(ctx, data.replace("user_role_restore:", ""));
       return;
     }
     if (data.startsWith("manage_assign:")) {

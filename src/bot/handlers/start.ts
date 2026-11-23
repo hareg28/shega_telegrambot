@@ -17,6 +17,14 @@ export async function handleStart(ctx: Context) {
     fullName
   );
 
+  if (user.role === "SUSPENDED") {
+    await ctx.reply(
+      `🚫 *Your account has been suspended.*\n\nYou are not allowed to use this bot. Please contact your administrator.`,
+      { parse_mode: "Markdown" }
+    );
+    return;
+  }
+
   await ctx.reply(
     `Welcome to *${getCompanyName()}*\n*Procurement & Material Request System*!\n\n` +
       `Your role: *${roleLabel(user.role)}*\n\nUse the menu below to get started.`,

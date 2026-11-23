@@ -996,10 +996,17 @@ export async function handleManageAssignCallback(ctx: Context, role: string) {
   };
   const roleName = roleDisplayNames[role] ?? role;
   const count = await prisma.user.count({ where: { role: role as UserRole } });
+  let countText = `Current Members: <b>${count}</b>\n\n`;
+  if (role === "REQUESTER") {
+    const suspendedCount = await prisma.user.count({ where: { role: "SUSPENDED" } });
+    if (suspendedCount > 0) {
+      countText = `Active Members: <b>${count}</b>\nSuspended Users: <b>${suspendedCount}</b>\n\n`;
+    }
+  }
 
   await ctx.reply(
     `👥 <b>${esc(roleName)} Management</b>\n\n` +
-    `Current Members: <b>${count}</b>\n\n` +
+    countText +
     `Choose an action:`,
     {
       parse_mode: "HTML",
@@ -1108,8 +1115,12 @@ export async function handleUserRoleRemoveMenu(ctx: Context, role: string) {
   };
   const roleName = roleDisplayNames[role] ?? role;
 
+  const whereClause = role === "REQUESTER"
+    ? { role: { in: ["REQUESTER", "SUSPENDED"] as any } }
+    : { role: role as any };
+
   const users = await prisma.user.findMany({
-    where: { role: role as UserRole },
+    where: whereClause,
     orderBy: { fullName: "asc" },
   });
 
@@ -1132,7 +1143,9 @@ export async function handleUserRoleRemoveMenu(ctx: Context, role: string) {
   }
 
   await ctx.reply(
-    `🗑 <b>Remove Member from ${esc(roleName)}</b>\n\nSelect a user to remove (their role will be reset to 📋 Requester):`,
+    role === "REQUESTER"
+      ? `🗑 <b>Suspend/Remove Member</b>\n\nSelect a user to suspend (they will not be able to use the bot):` 
+      : `🗑 <b>Remove Member from ${esc(roleName)}</b>\n\nSelect a user to remove (their role will be reset to 📋 Requester):`,
     {
       parse_mode: "HTML",
       reply_markup: userRemoveListKeyboard(role, removableUsers),
@@ -1161,10 +1174,26 @@ export async function handleUserRoleRemove(ctx: Context, role: string, userId: s
   const roleName = roleDisplayNames[role] ?? role;
 
   if (role === "REQUESTER") {
+    const isSuspended = user.role === "SUSPENDED";
+    if (isSuspended) {
+      // User is already suspended — offer to restore
+      await ctx.reply(
+        `⚠️ <b>User Already Suspended</b>\n\n` +
+        `<b>${esc(user.fullName)}</b> (@${esc(user.telegramUsername ?? "—")}) is already suspended.\n\n` +
+        `Do you want to <b>restore</b> them as a Requester?`,
+        {
+          parse_mode: "HTML",
+          reply_markup: new InlineKeyboard()
+            .text("✅ Yes, Restore", `user_role_restore:${userId}`)
+            .text("❌ Cancel", `manage_assign:${role}`),
+        }
+      );
+      return;
+    }
     await ctx.reply(
-      `⚠️ <b>Confirm User Deletion</b>\n\n` +
-      `Are you sure you want to completely remove <b>${esc(user.fullName)}</b> (@${esc(user.telegramUsername ?? "—")}) from the system?\n\n` +
-      `<i>This will delete their user record from the bot database.</i>`,
+      `⚠️ <b>Confirm User Suspension</b>\n\n` +
+      `Are you sure you want to <b>suspend</b> <b>${esc(user.fullName)}</b> (@${esc(user.telegramUsername ?? "—")})?` +
+      `\n\n<i>They will no longer be able to use the bot. You can restore them later.</i>`,
       {
         parse_mode: "HTML",
         reply_markup: userRemoveConfirmKeyboard(role, userId),
@@ -1218,39 +1247,22 @@ export async function handleUserRoleRemoveConfirm(ctx: Context, role: string, us
   const roleName = roleDisplayNames[role] ?? role;
 
   if (role === "REQUESTER") {
-    const hasHistory =
-      user.materialRequests.length > 0 ||
-      user.purchaseRequests.length > 0 ||
-      user.approvedPrs.length > 0 ||
-      user.approvalHistory.length > 0;
-
-    if (hasHistory) {
-      await ctx.reply(
-        `⚠️ Cannot delete <b>${esc(user.fullName)}</b> because they have <b>${user.materialRequests.length}</b> material request(s) / purchase records in the database.\n\n` +
-        `Deleting them would break historical transaction records.`,
-        {
-          parse_mode: "HTML",
-          reply_markup: roleMenuKeyboard(role),
-        }
-      );
-      return;
-    }
-
+    // Suspend the user instead of deleting — prevents re-registration
     try {
-      await prisma.formDraft.deleteMany({ where: { telegramId: user.telegramId } });
-      await prisma.notification.deleteMany({ where: { userId: user.id } });
-      await prisma.user.delete({ where: { id: userId } });
-
+      await prisma.user.update({
+        where: { id: userId },
+        data: { role: "SUSPENDED" },
+      });
       await ctx.reply(
-        `🗑 <b>${esc(user.fullName)}</b> has been completely deleted from the database.`,
+        `🚫 <b>${esc(user.fullName)}</b> has been <b>suspended</b>.\n\nThey will no longer be able to use the bot. You can restore them from the Requester management menu.`,
         {
           parse_mode: "HTML",
           reply_markup: roleMenuKeyboard(role),
         }
       );
     } catch (err: any) {
-      console.error("User delete error:", err);
-      await ctx.reply(`❌ Failed to delete user: ${err.message}`, {
+      console.error("User suspend error:", err);
+      await ctx.reply(`❌ Failed to suspend user: ${err.message}`, {
         reply_markup: roleMenuKeyboard(role),
       });
     }
@@ -1264,6 +1276,32 @@ export async function handleUserRoleRemoveConfirm(ctx: Context, role: string, us
     {
       parse_mode: "HTML",
       reply_markup: roleMenuKeyboard(role),
+    }
+  );
+}
+
+export async function handleUserRoleRestore(ctx: Context, userId: string) {
+  const from = ctx.from;
+  if (!from) return;
+  const admin = await requireAdministrator(BigInt(from.id));
+  await ctx.answerCallbackQuery();
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    await ctx.reply("❌ User not found.");
+    return;
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { role: "REQUESTER" },
+  });
+
+  await ctx.reply(
+    `✅ <b>${esc(user.fullName)}</b> has been <b>restored</b> as a 📋 Requester and can now use the bot again.`,
+    {
+      parse_mode: "HTML",
+      reply_markup: roleMenuKeyboard("REQUESTER"),
     }
   );
 }

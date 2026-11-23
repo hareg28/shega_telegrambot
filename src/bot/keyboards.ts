@@ -357,20 +357,22 @@ export function roleMenuKeyboard(role: string): InlineKeyboard {
 
 export function userRemoveListKeyboard(
   role: string,
-  users: Array<{ id: string; fullName: string; telegramUsername?: string | null; isSuperAdmin?: boolean }>
+  users: Array<{ id: string; fullName: string; telegramUsername?: string | null; isSuperAdmin?: boolean; role?: string }>
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
   for (const u of users) {
     if (u.isSuperAdmin) continue;
+    const isSuspended = u.role === "SUSPENDED";
     const name = u.fullName || (u.telegramUsername ? `@${u.telegramUsername}` : "User");
-    kb.text(`🗑 ${name}`, `user_role_remove:${role}:${u.id}`).row();
+    const label = isSuspended ? `🚫 ${name} [Suspended]` : `🗑 ${name}`;
+    kb.text(label, `user_role_remove:${role}:${u.id}`).row();
   }
   kb.text("🔙 Back", `manage_assign:${role}`);
   return kb;
 }
 
 export function userRemoveConfirmKeyboard(role: string, userId: string): InlineKeyboard {
-  const btnLabel = role === "REQUESTER" ? "🗑 Yes, Delete User" : "✅ Yes, Revoke Role";
+  const btnLabel = role === "REQUESTER" ? "🚫 Yes, Suspend" : "✅ Yes, Revoke Role";
   return new InlineKeyboard()
     .text(btnLabel, `user_role_remove_confirm:${role}:${userId}`)
     .text("❌ Cancel", `manage_assign:${role}`);

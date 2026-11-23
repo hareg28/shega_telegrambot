@@ -114,6 +114,7 @@ model Supplier {
   email            String?
   address          String?
   vatReceiptNumber String?
+  vatRegistered    Boolean  @default(false)
   bankName         String?
   accountName      String?
   accountNumber    String?
@@ -262,6 +263,7 @@ enum UserRole {
   PURCHASER
   ADMINISTRATOR
   VIEWER
+  SUSPENDED
 }
 
 enum RequestStatus {
