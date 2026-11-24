@@ -17,14 +17,29 @@ async function getSheetsClient() {
   const credentialsJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
   if (!credentialsPath && !credentialsJson) {
-    console.warn("Google Sheets credentials not configured in .env (GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_SERVICE_ACCOUNT_JSON)");
+    console.warn("Google Sheets credentials not configured (GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_SERVICE_ACCOUNT_JSON)");
     return null;
   }
 
   try {
     let auth;
     if (credentialsJson) {
-      const credentials = typeof credentialsJson === "string" ? JSON.parse(credentialsJson) : credentialsJson;
+      let credentials = credentialsJson as any;
+      if (typeof credentials === "string") {
+        const trimmed = credentials.trim();
+        try {
+          credentials = JSON.parse(trimmed);
+        } catch {
+          try {
+            credentials = JSON.parse(Buffer.from(trimmed, "base64").toString("utf-8"));
+          } catch {
+            throw new Error("Invalid GOOGLE_SERVICE_ACCOUNT_JSON format. Must be valid JSON.");
+          }
+        }
+      }
+      if (credentials?.private_key && typeof credentials.private_key === "string") {
+        credentials.private_key = credentials.private_key.replace(/\\n/g, "\n");
+      }
       auth = new google.auth.GoogleAuth({
         credentials,
         scopes: SCOPES,
@@ -533,15 +548,18 @@ function formatMrStatus(status: string): string {
  * Full resync of MR sheet in ascending MR number order.
  * Call this once from an admin command to fix sheet ordering.
  */
-export async function syncAllMrRowsInOrder(): Promise<void> {
-  if (!SHEET_ID) return;
+export async function syncAllMrRowsInOrder(): Promise<number> {
+  const sheetId = process.env.GOOGLE_SHEET_ID || SHEET_ID;
+  if (!sheetId) throw new Error("GOOGLE_SHEET_ID is not configured in environment variables.");
   const sheets = await getSheetsClient();
-  if (!sheets) return;
+  if (!sheets) throw new Error("Google Sheets client could not be initialized. Please check GOOGLE_SERVICE_ACCOUNT_JSON in environment variables.");
+
+  await ensureWorksheet(sheets, MR_SHEET, MR_HEADERS);
 
   // Clear existing rows (A2:L) to rebuild from scratch in ascending order
   try {
     await sheets.spreadsheets.values.clear({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId: sheetId,
       range: `${MR_SHEET}!A2:L`,
     });
   } catch (err) {
@@ -564,6 +582,45 @@ export async function syncAllMrRowsInOrder(): Promise<void> {
     await upsertMaterialRequestRows(mr as any);
   }
   console.log(`Full MR sheet resync complete: ${allMrs.length} MRs`);
+  return allMrs.length;
+}
+
+/**
+ * Full resync of PR sheet in ascending order.
+ */
+export async function syncAllPrRowsInOrder(): Promise<number> {
+  const sheetId = process.env.GOOGLE_SHEET_ID || SHEET_ID;
+  if (!sheetId) throw new Error("GOOGLE_SHEET_ID is not configured in environment variables.");
+  const sheets = await getSheetsClient();
+  if (!sheets) throw new Error("Google Sheets client could not be initialized. Please check GOOGLE_SERVICE_ACCOUNT_JSON in environment variables.");
+
+  await ensureWorksheet(sheets, PR_SHEET, PR_HEADERS);
+
+  try {
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: sheetId,
+      range: `${PR_SHEET}!A2:R`,
+    });
+  } catch (err) {
+    console.error("Error clearing PR sheet:", err);
+  }
+
+  const { prisma } = await import("./prisma");
+  const allPrs = await prisma.purchaseRequest.findMany({
+    include: {
+      items: true,
+      purchaser: true,
+      approvedBy: true,
+      materialRequest: { include: { requestedBy: true } },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  for (const pr of allPrs) {
+    await upsertPurchaseRequestRows(pr as any);
+  }
+  console.log(`Full PR sheet resync complete: ${allPrs.length} PRs`);
+  return allPrs.length;
 }
 
 // ============================================================
@@ -772,9 +829,10 @@ export async function deleteProjectRow(projectName: string) {
 }
 
 export async function syncAllProjectsInOrder(): Promise<number> {
-  if (!SHEET_ID) return 0;
+  const sheetId = process.env.GOOGLE_SHEET_ID || SHEET_ID;
+  if (!sheetId) throw new Error("GOOGLE_SHEET_ID is not configured in environment variables.");
   const sheets = await getSheetsClient();
-  if (!sheets) return 0;
+  if (!sheets) throw new Error("Google Sheets client could not be initialized. Please check GOOGLE_SERVICE_ACCOUNT_JSON in environment variables.");
 
   await ensureWorksheet(sheets, PROJECT_SHEET, PROJECT_HEADERS);
 
@@ -796,12 +854,12 @@ export async function syncAllProjectsInOrder(): Promise<number> {
 
   try {
     await sheets.spreadsheets.values.clear({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId: sheetId,
       range: `${PROJECT_SHEET}!A2:E`,
     });
     if (rows.length > 0) {
       await sheets.spreadsheets.values.update({
-        spreadsheetId: SHEET_ID,
+        spreadsheetId: sheetId,
         range: `${PROJECT_SHEET}!A2:E${rows.length + 1}`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: rows },
@@ -816,9 +874,10 @@ export async function syncAllProjectsInOrder(): Promise<number> {
 }
 
 export async function syncAllSuppliersInOrder(): Promise<number> {
-  if (!SHEET_ID) return 0;
+  const sheetId = process.env.GOOGLE_SHEET_ID || SHEET_ID;
+  if (!sheetId) throw new Error("GOOGLE_SHEET_ID is not configured in environment variables.");
   const sheets = await getSheetsClient();
-  if (!sheets) return 0;
+  if (!sheets) throw new Error("Google Sheets client could not be initialized. Please check GOOGLE_SERVICE_ACCOUNT_JSON in environment variables.");
 
   await ensureWorksheet(sheets, SUPPLIER_SHEET, SUPPLIER_HEADERS);
 
@@ -840,12 +899,12 @@ export async function syncAllSuppliersInOrder(): Promise<number> {
 
   try {
     await sheets.spreadsheets.values.clear({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId: sheetId,
       range: `${SUPPLIER_SHEET}!A2:H`,
     });
     if (rows.length > 0) {
       await sheets.spreadsheets.values.update({
-        spreadsheetId: SHEET_ID,
+        spreadsheetId: sheetId,
         range: `${SUPPLIER_SHEET}!A2:H${rows.length + 1}`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: rows },

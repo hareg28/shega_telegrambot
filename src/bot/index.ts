@@ -186,12 +186,20 @@ export function createBot(): Bot {
         await ctx.reply("❌ Admin only command.");
         return;
       }
-      await ctx.reply("🔄 Synchronizing all data to Google Sheets (MRs, Suppliers, Projects)... please wait.");
-      const { syncAllMrRowsInOrder, syncAllSuppliersInOrder, syncAllProjectsInOrder } = await import("@/lib/google-sheets");
-      await syncAllMrRowsInOrder();
+      await ctx.reply("🔄 Synchronizing all data to Google Sheets (MRs, PRs, Suppliers, Projects)... please wait.");
+      const {
+        syncAllMrRowsInOrder,
+        syncAllPrRowsInOrder,
+        syncAllSuppliersInOrder,
+        syncAllProjectsInOrder,
+      } = await import("@/lib/google-sheets");
+      const mrCount = await syncAllMrRowsInOrder();
+      const prCount = await syncAllPrRowsInOrder();
       const supCount = await syncAllSuppliersInOrder();
       const projCount = await syncAllProjectsInOrder();
-      await ctx.reply(`✅ Google Sheets sync complete!\n\n📋 Synced:\n• All Material Requests\n• ${supCount} Suppliers\n• ${projCount} Projects`);
+      await ctx.reply(
+        `✅ Google Sheets sync complete!\n\n📋 Synced:\n• ${mrCount} Material Requests\n• ${prCount} Purchase Requests\n• ${supCount} Suppliers\n• ${projCount} Projects`
+      );
     } catch (err: any) {
       console.error("Sync sheets error:", err);
       await ctx.reply(`❌ Sync failed: ${err.message}`);
