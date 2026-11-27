@@ -299,7 +299,7 @@ async function upsertRow(
 
   const existingRow = await findRowByKey(sheets, sheetTitle, key, searchColumn);
   const colCount = headers.length;
-  
+
   const targetRow = existingRow ?? (await getNextEmptyRow(sheets, sheetTitle));
   const range = `${sheetTitle}!A${targetRow}:${colLetter(colCount)}${targetRow}`;
 
@@ -453,7 +453,7 @@ export async function upsertMaterialRequestRows(
       range: `${MR_SHEET}!A:${colLetter(MR_HEADERS.length)}`,
     });
     const allRows = allRowsRes.data.values ?? [];
-    
+
     // Create a map of key to row index
     const keyToRowMap = new Map<string, number>();
     // Column G is index 6 (0-based)
@@ -469,7 +469,7 @@ export async function upsertMaterialRequestRows(
 
     // Determine next available row (if needed)
     let nextRow = allRows.length + 1; // 1-based
-    
+
     // Prepare batch update requests
     const requests: any[] = [];
 
@@ -477,7 +477,7 @@ export async function upsertMaterialRequestRows(
     for (let idx = 0; idx < mr.items.length; idx++) {
       const item = mr.items[idx];
       const rowKey = item.lineId ?? `${mr.mrNumber}/${idx + 1}`;
-      
+
       const values = [
         mr.mrNumber,
         formatDate(mr.requestDate),
@@ -568,6 +568,43 @@ export async function syncAllMrRowsInOrder(): Promise<number> {
 
   await ensureWorksheet(sheets, MR_SHEET, MR_HEADERS);
 
+  const { default: prisma } = await import("./prisma");
+  const allMrs = await prisma.materialRequest.findMany({
+    include: { items: true, requestedBy: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  // Sort numerically by MR number
+  allMrs.sort((a, b) => {
+    const numA = parseInt(a.mrNumber.replace(/^MR-0*/i, ""), 10) || 0;
+    const numB = parseInt(b.mrNumber.replace(/^MR-0*/i, ""), 10) || 0;
+    return numA - numB;
+  });
+
+  const mrRows: (string | number)[][] = [];
+  for (const mr of allMrs) {
+    const requester = getRequesterDisplayName(mr);
+    const status = formatMrStatus(mr.status);
+    for (let idx = 0; idx < mr.items.length; idx++) {
+      const item = mr.items[idx];
+      const rowKey = item.lineId || `${mr.mrNumber}/${idx + 1}`;
+      mrRows.push([
+        mr.mrNumber,
+        formatDate(mr.requestDate),
+        mr.projectName,
+        mr.projectType || "",
+        mr.boq || "",
+        requester,
+        rowKey,
+        item.itemName,
+        decimalToNumber(item.quantity),
+        item.unit,
+        status,
+        "",
+      ]);
+    }
+  }
+
   // Clear existing rows (A2:L) to rebuild from scratch in ascending order
   try {
     await sheets.spreadsheets.values.clear({
@@ -578,22 +615,16 @@ export async function syncAllMrRowsInOrder(): Promise<number> {
     console.error("Error clearing MR sheet:", err);
   }
 
-  const { prisma } = await import("./prisma");
-  const allMrs = await prisma.materialRequest.findMany({
-    include: { items: true, requestedBy: true },
-  });
-
-  // Sort numerically by MR number
-  allMrs.sort((a, b) => {
-    const numA = parseInt(a.mrNumber.replace(/^MR-0*/i, ""), 10) || 0;
-    const numB = parseInt(b.mrNumber.replace(/^MR-0*/i, ""), 10) || 0;
-    return numA - numB;
-  });
-
-  for (const mr of allMrs) {
-    await upsertMaterialRequestRows(mr as any);
+  if (mrRows.length > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: sheetId,
+      range: `${MR_SHEET}!A2:L${mrRows.length + 1}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: mrRows },
+    });
   }
-  console.log(`Full MR sheet resync complete: ${allMrs.length} MRs`);
+
+  console.log(`Full MR sheet resync complete: ${allMrs.length} MRs (${mrRows.length} rows)`);
   return allMrs.length;
 }
 
@@ -608,16 +639,7 @@ export async function syncAllPrRowsInOrder(): Promise<number> {
 
   await ensureWorksheet(sheets, PR_SHEET, PR_HEADERS);
 
-  try {
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId: sheetId,
-      range: `${PR_SHEET}!A2:R`,
-    });
-  } catch (err) {
-    console.error("Error clearing PR sheet:", err);
-  }
-
-  const { prisma } = await import("./prisma");
+  const { default: prisma } = await import("./prisma");
   const allPrs = await prisma.purchaseRequest.findMany({
     include: {
       items: true,
@@ -628,10 +650,66 @@ export async function syncAllPrRowsInOrder(): Promise<number> {
     orderBy: { createdAt: "asc" },
   });
 
+  allPrs.sort((a, b) => {
+    const numA = parseInt(a.prNumber.replace(/^PR-0*/i, ""), 10) || 0;
+    const numB = parseInt(b.prNumber.replace(/^PR-0*/i, ""), 10) || 0;
+    return numA - numB;
+  });
+
+  const prRows: (string | number)[][] = [];
   for (const pr of allPrs) {
-    await upsertPurchaseRequestRows(pr as any);
+    const status = formatPrStatus(pr.status);
+    for (const item of pr.items) {
+      const qty = decimalToNumber(item.quantity);
+      const unitPrice = decimalToNumber(item.unitPrice);
+      const vatAmount = decimalToNumber((item as any).vatAmount || 0);
+      const itemTotal = decimalToNumber(item.amount);
+      const baseAmount = Math.round((itemTotal - vatAmount) * 100) / 100;
+      const priceType = (item as any).priceType || "Excluding VAT";
+      const mr = pr.materialRequest as any;
+
+      prRows.push([
+        pr.prNumber,                                  // A — PR Number
+        mr?.projectType || "",                        // B — Project Type
+        mr?.projectName || "",                        // C — Project
+        mr?.boq || "",                                // D — BOQ
+        item.itemName,                                // E — Material
+        qty,                                          // F — Quantity
+        item.unit,                                    // G — Unit
+        unitPrice,                                    // H — Unit Price
+        baseAmount,                                   // I — Total Price
+        priceType,                                    // J — VAT Status
+        vatAmount,                                    // K — VAT
+        itemTotal,                                    // L — Total Amount
+        formatDate(mr?.requestDate ?? pr.createdAt),  // M — MR Date
+        formatDate(pr.createdAt),                     // N — PR Date
+        status,                                       // O — Status
+        pr.supplierName,                              // P — Supplier Name
+        pr.supplierPhone || "",                       // Q — Supplier Phone
+        (item as any).lineId || "",                   // R — PR Line ID
+      ]);
+    }
   }
-  console.log(`Full PR sheet resync complete: ${allPrs.length} PRs`);
+
+  try {
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: sheetId,
+      range: `${PR_SHEET}!A2:R`,
+    });
+  } catch (err) {
+    console.error("Error clearing PR sheet:", err);
+  }
+
+  if (prRows.length > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: sheetId,
+      range: `${PR_SHEET}!A2:R${prRows.length + 1}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: prRows },
+    });
+  }
+
+  console.log(`Full PR sheet resync complete: ${allPrs.length} PRs (${prRows.length} rows)`);
   return allPrs.length;
 }
 
