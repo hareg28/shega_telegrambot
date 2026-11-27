@@ -113,7 +113,11 @@ async function showFilteredApprovedRequests(ctx: Context, options?: { status?: s
       REJECTED: "Rejected"
     };
     if (Array.isArray(options.status)) {
-      filterText = "Status: Pending";
+      const isPendingFilter =
+        options.status.length === 2 &&
+        options.status.includes("PENDING_APPROVAL") &&
+        options.status.includes("WAITING_FINAL_APPROVAL");
+      filterText = isPendingFilter ? "Status: Pending" : "All Requests";
     } else {
       filterText = `Status: ${statusLabels[options.status] || options.status}`;
     }
@@ -140,10 +144,14 @@ async function showFilteredApprovedRequests(ctx: Context, options?: { status?: s
   }
 
   for (const mr of requests) {
-    await ctx.reply(formatMrListItem(mr), {
-      parse_mode: "Markdown",
-      reply_markup: purchaserMrKeyboard(mr.id),
-    });
+    try {
+      await ctx.reply(formatMrListItem(mr), {
+        parse_mode: "Markdown",
+        reply_markup: purchaserMrKeyboard(mr.id),
+      });
+    } catch (err) {
+      console.error(`Error sending approved MR card for ${mr.mrNumber}:`, err);
+    }
   }
 }
 

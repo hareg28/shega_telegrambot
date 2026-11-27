@@ -430,7 +430,10 @@ export function hasRemainingItems(mr: any): boolean {
   return false;
 }
 
-export async function getApprovedMaterialRequests(limit = 20, options?: { status?: string | string[]; dateFrom?: Date; dateTo?: Date }) {
+export async function getApprovedMaterialRequests(
+  limit = 20,
+  options?: { status?: string | string[]; dateFrom?: Date; dateTo?: Date; onlyRemaining?: boolean }
+) {
   const where: any = {};
   if (options?.status) {
     where.status = Array.isArray(options.status) ? { in: options.status } : options.status;
@@ -452,6 +455,7 @@ export async function getApprovedMaterialRequests(limit = 20, options?: { status
     where,
     include: {
       requestedBy: true,
+      purchaseRequests: true,
       items: {
         orderBy: { sortOrder: "asc" },
         include: {
@@ -468,7 +472,11 @@ export async function getApprovedMaterialRequests(limit = 20, options?: { status
     take: limit,
   });
   
-  return allApproved.filter(mr => hasRemainingItems(mr));
+  if (options?.onlyRemaining) {
+    return allApproved.filter(mr => hasRemainingItems(mr));
+  }
+
+  return allApproved;
 }
 
 export async function getPurchaserHistory(purchaserId: string, limit = 20) {
