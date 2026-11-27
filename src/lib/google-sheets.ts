@@ -57,7 +57,12 @@ async function getSheetsClient() {
   }
 }
 
-const SHEET_ID = process.env.GOOGLE_SHEET_ID;
+let SHEET_ID = process.env.GOOGLE_SHEET_ID;
+
+function refreshSheetId(): string | undefined {
+  SHEET_ID = process.env.GOOGLE_SHEET_ID || SHEET_ID;
+  return SHEET_ID;
+}
 
 // ============================================================
 // Sheet column definitions
@@ -425,9 +430,16 @@ export async function upsertMaterialRequestRows(
     approvedByName?: string;
   }
 ) {
-  if (!SHEET_ID) return;
+  const currentSheetId = refreshSheetId();
+  if (!currentSheetId) {
+    console.warn("Google Sheets: GOOGLE_SHEET_ID not set, skipping MR upsert");
+    return;
+  }
   const sheets = await getSheetsClient();
-  if (!sheets) return;
+  if (!sheets) {
+    console.warn("Google Sheets: client not available, skipping MR upsert");
+    return;
+  }
 
   await ensureWorksheet(sheets, MR_SHEET, MR_HEADERS);
 
@@ -636,9 +648,16 @@ export async function upsertPurchaseRequestRows(
   },
   options?: { rejectionReason?: string }
 ) {
-  if (!SHEET_ID) return;
+  const currentSheetId = refreshSheetId();
+  if (!currentSheetId) {
+    console.warn("Google Sheets: GOOGLE_SHEET_ID not set, skipping PR upsert");
+    return;
+  }
   const sheets = await getSheetsClient();
-  if (!sheets) return;
+  if (!sheets) {
+    console.warn("Google Sheets: client not available, skipping PR upsert");
+    return;
+  }
 
   const status = formatPrStatus(pr.status);
 

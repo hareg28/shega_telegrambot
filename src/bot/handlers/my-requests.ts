@@ -61,7 +61,16 @@ async function showFilteredRequests(ctx: Context, options: {
     include: {
       requestedBy: true,
       items: true,
-      purchaseRequests: { include: { purchaser: true } },
+      purchaseRequests: {
+        include: {
+          items: true,
+          purchaser: true,
+          approvedBy: true,
+        },
+      },
+      approvalHistory: {
+        include: { performedBy: true },
+      },
     },
     orderBy: { createdAt: "desc" },
     take: 20,
@@ -104,10 +113,14 @@ async function showFilteredRequests(ctx: Context, options: {
 
   const hidePrices = user.role === "REQUESTER";
   for (const mr of requests.slice(0, 10)) {
-    await ctx.reply(formatMrDetails(mr as any, hidePrices), {
-      parse_mode: "HTML",
-      reply_markup: mrActionKeyboard(mr.id),
-    });
+    try {
+      await ctx.reply(formatMrDetails(mr as any, hidePrices), {
+        parse_mode: "HTML",
+        reply_markup: mrActionKeyboard(mr.id),
+      });
+    } catch (err) {
+      console.error(`Error sending MR card for ${mr.mrNumber}:`, err);
+    }
   }
 
   if (requests.length > 10) {

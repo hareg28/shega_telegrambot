@@ -239,9 +239,10 @@ export function formatMrDetails(mr: MRFull, hidePrices: boolean = false): string
     text += `📄 PR No. : <b>—</b>\n\n`;
   }
 
-  if (activePr) {
+  const prItems = activePr?.items ?? [];
+  if (activePr && prItems.length > 0) {
     text += `📦 <b>BOQ Material — ${esc(mr.boq ?? "Material List")}</b>\n\n`;
-    activePr.items.forEach((item, i) => {
+    prItems.forEach((item, i) => {
       const qty = safeNumber(item.quantity);
       const { cleanName } = extractBoqSectionAndName(item);
       text += `${i + 1}. <b>${esc(cleanName)}</b> — ${qty} ${esc(item.unit)}\n`;
@@ -265,7 +266,7 @@ export function formatMrDetails(mr: MRFull, hidePrices: boolean = false): string
     }
   } else {
     const sectionsMap = new Map<string, typeof mr.items>();
-    mr.items.forEach((item) => {
+    (mr.items ?? []).forEach((item) => {
       const { section } = extractBoqSectionAndName(item);
       const secName = section || mr.boq || "Material List";
       if (!sectionsMap.has(secName)) sectionsMap.set(secName, []);
